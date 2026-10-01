@@ -1,3 +1,0 @@
-# Optional: ML prompt-injection guard. Without these the addon falls back to the phrase list.
-transformers
-torch

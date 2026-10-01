@@ -1,16 +1,22 @@
-# secrets
-.env
-
-# environments / caches
-.venv/
 __pycache__/
-*.pyc
-
-# large or downloaded assets
-models/
-All-Prompt-Jailbreak/
-
-# local state
-.config_state.json
-.custom_state.json
-.policy_cache.json
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+.env
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+*.log
+*.audit
+*.audit.sig
+*.audit.jsonl
+*.audit.jsonl.*
+mcp-firewall.key
