@@ -1,34 +1,12 @@
-# Security Policy
+# Security
 
-## Reporting Vulnerabilities
+## Reporting a vulnerability
+Please report privately through GitHub Security Advisories (Security tab → Report a vulnerability). Do not open public issues for vulnerabilities.
 
-If you discover a security vulnerability in mcp-firewall, please report it responsibly:
-
-**Email:** rr@canus.ch
-**Subject:** [mcp-firewall] Security Vulnerability
-
-Please include:
-- Description of the vulnerability
-- Steps to reproduce
-- Potential impact
-- Suggested fix (if any)
-
-I will acknowledge receipt within 48 hours and provide an estimated timeline for a fix.
-
-## Scope
-
-- mcp-firewall proxy, pipeline, policy engine, audit trail
-- CLI and dashboard
-- Dependencies (if vulnerability is introduced through mcp-firewall's usage)
-
-## Out of Scope
-
-- Vulnerabilities in MCP servers being proxied (that's what mcp-firewall protects against)
-- Social engineering
-- Denial of service via resource exhaustion (known limitation of any proxy)
-
-## Disclosure
-
-- Security fixes are released as patch versions
-- CVEs are requested for critical/high vulnerabilities
-- Fixes are credited to the reporter (unless anonymity is requested)
+## Deployment notes
+- Change the default `API_TOKEN` (`change-me-token`) and set a random `SECRET_KEY` and `TEACH_MODEL_KEY`.
+- Serve the manager behind HTTPS; the token and sessions are otherwise sent in clear text.
+- The client proxy binds to `0.0.0.0:8080`. Restrict it with a firewall if it should not be reachable from other hosts.
+- The mitmproxy CA you install can decrypt TLS on that machine. Protect `~/.mitmproxy` and only trust it on managed devices.
+- Never commit `.env` files or `*.db`; both are in `.gitignore`.
+- OCR debug mode prints screenshot text to the console. Keep `APEXION_IMAGE_DEBUG=0` in production.

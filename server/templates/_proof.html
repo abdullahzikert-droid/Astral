@@ -1,0 +1,23 @@
+{# Renders each hit with the detection-layer PROOF. Usage: {% include "_proof.html" %} with `hits` set #}
+{% for h in hits %}
+<details class="proof-hit">
+  <summary>
+    [{{ h.severity | upper }}] {{ h.label }} &rarr; {{ h.action }}{% if h.escalated %} (escalated){% endif %}
+    {% if h.proof %}<span class="proof-layer">{{ h.proof.layer }}</span>{% endif %}
+  </summary>
+  {% if h.proof %}
+  <table class="proof-table">
+    <tr><td>Engine</td><td>{{ h.proof.engine }}</td></tr>
+    <tr><td>Layer</td><td>{{ h.proof.layer }}</td></tr>
+    <tr><td>Recognizer</td><td>{{ h.proof.recognizer }}</td></tr>
+    {% if h.proof.pattern %}<tr><td>Pattern</td><td>{{ h.proof.pattern }}</td></tr>{% endif %}
+    {% if h.proof.original_score is defined %}<tr><td>Score</td><td>{{ h.proof.original_score }} &rarr; {{ h.proof.score }}{% if h.proof.context_boost %} (context +{{ h.proof.context_boost }}{% if h.proof.context_word %}, word "{{ h.proof.context_word }}"{% endif %}){% endif %}</td></tr>
+    {% elif h.proof.score is defined %}<tr><td>Score</td><td>{{ h.proof.score }}</td></tr>{% endif %}
+    {% if h.proof.checksum_validated is not none and h.proof.checksum_validated is defined %}<tr><td>Checksum valid</td><td>{{ h.proof.checksum_validated }}</td></tr>{% endif %}
+    {% if h.proof.preview %}<tr><td>Matched (masked)</td><td><code>{{ h.proof.preview }}</code>{% if h.proof.span %} at chars {{ h.proof.span[0] }}&ndash;{{ h.proof.span[1] }}{% endif %}{% if h.proof.occurrences and h.proof.occurrences > 1 %} &middot; {{ h.proof.occurrences }} occurrences{% endif %}</td></tr>{% endif %}
+    {% if h.proof.explanation %}<tr><td>Why</td><td>{{ h.proof.explanation }}</td></tr>{% endif %}
+    {% if h.proof.stages %}<tr><td>Pipeline</td><td>{% for st in h.proof.stages %}{{ loop.index }}. {{ st }}<br>{% endfor %}</td></tr>{% endif %}
+  </table>
+  {% else %}<div class="small">No layer proof recorded (report from an older client).</div>{% endif %}
+</details>
+{% endfor %}

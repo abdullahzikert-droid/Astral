@@ -1,0 +1,334 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+
+<style>
+  .tabs { display: flex; gap: 0; margin-bottom: 24px; border-bottom: 2px solid var(--border-color); }
+  .tab-btn {
+    background: none; border: none; box-shadow: none;
+    color: var(--text-secondary); font-size: 13px; font-weight: 600;
+    padding: 10px 22px; border-radius: 0; cursor: pointer;
+    border-bottom: 2px solid transparent; margin-bottom: -2px;
+    transition: color .15s ease; letter-spacing: .02em;
+  }
+  .tab-btn:hover { color: #fff; transform: none; }
+  .tab-btn.active { color: #fff; border-bottom: 2px solid var(--primary-color); background: none; box-shadow: none; }
+  .tab-pane { display: none; }
+  .tab-pane.active { display: block; animation: fadeIn .2s ease; }
+  .badge.action-block { background: rgba(239,68,68,0.15); color: #f87171; }
+  .badge.action-redact { background: rgba(245,158,11,0.15); color: #fbbf24; }
+  .badge.action-warn { background: rgba(59,130,246,0.15); color: #60a5fa; }
+  .badge.action-ignore { background: rgba(148,163,184,0.15); color: #94a3b8; }
+  .badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; text-transform:uppercase; }
+</style>
+
+<h2>Settings</h2>
+
+<div class="tabs">
+  <button class="tab-btn active" data-tab="policy">Detection Policy</button>
+  <button class="tab-btn" data-tab="custom">Custom Recognizers</button>
+  <button class="tab-btn" data-tab="clients">Client Settings</button>
+  <button class="tab-btn" data-tab="audit">Audit Log</button>
+</div>
+
+<!-- ═══════════════ TAB: Detection Policy ═══════════════ -->
+<div class="tab-pane active" id="pane-policy">
+<fieldset>
+  <legend>Detection Policy (Presidio)</legend>
+  <p class="small">
+    Version {{ config_version }} — last updated {{ config_updated_at | int | datetimeformat }}.
+    Entities are <b>auto-discovered</b> from the Presidio engines running on your clients ({{ catalog_count }} reported so far; new Presidio recognizers appear here by themselves). Choose what happens when each is detected. <b>ignore</b> turns the entity off.
+    Connected clients refresh automatically. Custom entities you've built are managed on the <a href="javascript:void(0)" onclick="switchTab('custom')">Custom Recognizers</a> tab.
+  </p>
+  <form method="post">
+    <input type="hidden" name="form_type" value="dlp_config">
+    <p>
+      <label>Minimum confidence score
+        <input type="number" name="score_threshold" min="0" max="1" step="0.05" value="{{ policy.score_threshold }}" style="width:80px;">
+      </label>
+      <span class="small">Lower catches more (more false positives). Presidio default is 0.5.</span>
+    </p>
+    <p>
+      <input type="text" id="entity-filter" placeholder="Filter entities…" style="width:260px;" oninput="filterEntities(this.value)">
+    </p>
+    {% for cat, items in groups.items() %}
+    <h4 style="margin:16px 0 6px; text-transform:capitalize;">{{ cat }} <span class="small">({{ items|length }})</span></h4>
+    <table class="entity-table">
+      <thead><tr><th>Entity</th><th>Detected by (Presidio layer)</th><th>Severity</th><th>Action</th></tr></thead>
+      <tbody>
+      {% for m in items %}
+        <tr data-search="{{ (m.label ~ ' ' ~ m.name) | lower }}">
+          <td>{{ m.label }} <span class="small">({{ m.name }})</span></td>
+          <td class="small">{{ m.layer }}{% if m.recognizers %}<br><span style="color:var(--text-secondary);">{{ m.recognizers }}</span>{% endif %}</td>
+          <td><select name="severity__{{ m.name }}">{% for v in severities %}<option value="{{ v }}" {{ 'selected' if v == m.severity }}>{{ v }}</option>{% endfor %}</select></td>
+          <td><select name="action__{{ m.name }}">{% for v in actions %}<option value="{{ v }}" {{ 'selected' if v == m.action }}>{{ v }}</option>{% endfor %}</select></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% endfor %}
+    <h4 style="margin:16px 0 6px;">Organisation deny-list</h4>
+    <p class="small">One term per line (customer names, project codenames...). Detected by Presidio's built-in deny-list recognizer and handled per the "Organisation deny-list term" row above. For a deny-list with its own action/severity/category, use <a href="javascript:void(0)" onclick="switchTab('custom')">Custom Recognizers</a> instead.</p>
+    <textarea name="deny_list" rows="5" style="width:100%;">{{ policy.deny_list | join('\n') }}</textarea>
+    <p><input type="submit" value="Save Detection Policy"></p>
+  </form>
+  <form method="post" onsubmit="return confirm('Reset every entity, threshold and deny-list term to the built-in defaults? This does NOT delete your custom recognizers.');">
+    <input type="hidden" name="form_type" value="dlp_reset">
+    <input type="submit" value="Reset to defaults">
+  </form>
+</fieldset>
+</div>
+
+<!-- ═══════════════ TAB: Custom Recognizers ═══════════════ -->
+<div class="tab-pane" id="pane-custom">
+<fieldset>
+  <legend>Custom Recognizers</legend>
+  <p class="small">
+    Define your own detection rules — no code, no client restart needed. A <b>pattern</b> recognizer
+    matches a regular expression (e.g. an internal employee ID format). A <b>deny-list</b> recognizer
+    matches an exact set of terms (e.g. codenames, customer names). Changes reach connected clients on
+    their next config poll (usually within 30s).
+  </p>
+
+  <table id="recognizer-table">
+    <thead><tr><th>Name</th><th>Entity</th><th>Kind</th><th>Action</th><th>Status</th><th></th></tr></thead>
+    <tbody>
+    {% for r in recognizers %}
+      <tr id="rec-row-{{ r.id }}">
+        <td>{{ r.name }}</td>
+        <td class="small">{{ r.entity }}</td>
+        <td class="small">{{ r.kind }}</td>
+        <td><span class="badge action-{{ r.action }}">{{ r.action }}</span></td>
+        <td>{% if r.enabled %}<span class="status-online">enabled</span>{% else %}<span class="status-offline">disabled</span>{% endif %}</td>
+        <td>
+          <button type="button" onclick='openRecognizerEditor({{ r | tojson }})'>Edit</button>
+          <button type="button" onclick="toggleRecognizer('{{ r.id }}')">{{ 'Disable' if r.enabled else 'Enable' }}</button>
+          <button type="button" onclick="deleteRecognizer('{{ r.id }}', '{{ r.name }}')">Delete</button>
+        </td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="small">No custom recognizers yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <p><button type="button" onclick="openRecognizerEditor(null)">+ New Recognizer</button></p>
+
+  <!-- Editor (hidden until opened) -->
+  <div id="recognizer-editor" style="display:none; margin-top:16px; padding:16px; border:1px solid var(--border-color); border-radius:6px;">
+    <h4 id="editor-title" style="margin-top:0;">New Recognizer</h4>
+    <input type="hidden" id="rec-id" value="">
+    <table style="width:auto;">
+      <tr><td>Name</td><td><input type="text" id="rec-name" placeholder="e.g. Employee ID" style="width:320px;"></td></tr>
+      <tr><td>Entity identifier</td><td><input type="text" id="rec-entity" placeholder="EMPLOYEE_ID" style="width:320px;"><div class="small">Uppercase, letters/numbers/underscore. This becomes the entity type shown in reports.</div></td></tr>
+      <tr><td>Kind</td><td>
+        <label><input type="radio" name="rec-kind" value="regex" checked onchange="onKindChange()"> Pattern (regex)</label>
+        <label style="margin-left:16px;"><input type="radio" name="rec-kind" value="deny_list" onchange="onKindChange()"> Deny-list (exact terms)</label>
+      </td></tr>
+      <tr id="row-regex"><td>Regular expression</td><td><input type="text" id="rec-regex" placeholder="\\bEMP-\\d{6}\\b" style="width:320px; font-family:monospace;"><div class="small">Python regex syntax. Matched against the raw request text.</div></td></tr>
+      <tr id="row-terms"><td>Terms (one per line)</td><td><textarea id="rec-terms" rows="4" style="width:320px;" placeholder="Project Falcon&#10;Operation Nightjar"></textarea></td></tr>
+      <tr><td>Confidence score</td><td><input type="number" id="rec-score" min="0.05" max="1" step="0.05" value="0.75" style="width:80px;"><div class="small">How confident a match is (0-1). Below the global threshold, it won't fire.</div></td></tr>
+      <tr id="row-context"><td>Context words</td><td><input type="text" id="rec-context" placeholder="employee, staff, badge" style="width:320px;"><div class="small">Comma-separated. Nearby words that boost confidence (pattern recognizers only).</div></td></tr>
+      <tr><td>Label</td><td><input type="text" id="rec-label" placeholder="Employee ID" style="width:320px;"></td></tr>
+      <tr><td>Category</td><td><input type="text" id="rec-category" placeholder="pii / financial / secrets / custom" style="width:320px;"></td></tr>
+      <tr><td>Severity</td><td><select id="rec-severity">{% for v in severities %}<option value="{{ v }}">{{ v }}</option>{% endfor %}</select></td></tr>
+      <tr><td>Action</td><td><select id="rec-action">{% for v in actions %}<option value="{{ v }}">{{ v }}</option>{% endfor %}</select></td></tr>
+      <tr><td>Enabled</td><td><input type="checkbox" id="rec-enabled" checked></td></tr>
+    </table>
+
+    <h4>Test against sample text</h4>
+    <p class="small">Quick server-side check while you build the pattern (regex/deny-list only — no NLP context boost, that only happens on a real client).</p>
+    <textarea id="rec-sample" rows="3" style="width:100%;" placeholder="Paste some example text here, e.g. 'Please update EMP-004821 and mention Project Falcon.'"></textarea>
+    <p><button type="button" onclick="testRecognizer()">Test</button></p>
+    <div id="rec-test-result"></div>
+
+    <p>
+      <button type="button" onclick="saveRecognizer()">Save Recognizer</button>
+      <button type="button" onclick="closeRecognizerEditor()">Cancel</button>
+    </p>
+    <div id="rec-error" class="small" style="color:#c0392b;"></div>
+  </div>
+</fieldset>
+</div>
+
+<!-- ═══════════════ TAB: Client Settings ═══════════════ -->
+<div class="tab-pane" id="pane-clients">
+<fieldset>
+  <legend>Per-Client Prompt Injection (Vigil) Settings</legend>
+  <p class="small">
+    The ML prompt-injection model always runs and blocks/warns according to its
+    own thresholds. These settings only control whether push notifications fire
+    on the client, and whether block and/or warn actions are applied.
+  </p>
+
+  {% if clients %}
+  <table>
+    <thead>
+      <tr>
+        <th>Client</th>
+        <th>ID</th>
+        <th>Status</th>
+        <th>Config Version</th>
+        <th>Push Notifications</th>
+        <th>Block Action</th>
+        <th>Warn Action</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for c in clients %}
+      {% set pis = pi_settings_map[c.client_id] %}
+      <tr>
+        <form method="post">
+          <input type="hidden" name="form_type" value="pi_settings">
+          <input type="hidden" name="client_id" value="{{ c.client_id }}">
+          <td>{{ c.name }}</td>
+          <td class="small">{{ c.client_id }}</td>
+          <td class="{{ 'status-online' if c.status == 'online' else 'status-offline' }}">{{ c.status }}</td>
+          <td>{{ c.config_version }} {% if c.config_version != config_version %}<span class="small">(stale)</span>{% endif %}</td>
+          <td><input type="checkbox" name="push_enabled" {{ 'checked' if pis.push_enabled }}></td>
+          <td><input type="checkbox" name="block_enabled" {{ 'checked' if pis.block_enabled }}></td>
+          <td><input type="checkbox" name="warn_enabled" {{ 'checked' if pis.warn_enabled }}></td>
+          <td><input type="submit" value="Save"></td>
+        </form>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No clients have connected yet.</p>
+  {% endif %}
+</fieldset>
+</div>
+
+<!-- ═══════════════ TAB: Audit Log ═══════════════ -->
+<div class="tab-pane" id="pane-audit">
+<fieldset>
+  <legend>Audit Log</legend>
+  <p class="small">Every change to the detection policy or custom recognizers, most recent first.</p>
+  {% if audit_log %}
+  <table>
+    <thead><tr><th>When</th><th>Who</th><th>Action</th><th>Summary</th></tr></thead>
+    <tbody>
+    {% for e in audit_log %}
+      <tr>
+        <td class="small">{{ e.ts | int | datetimeformat }}</td>
+        <td class="small">{{ e.actor }}</td>
+        <td class="small">{{ e.action }}</td>
+        <td class="small">{{ e.summary }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No changes recorded yet.</p>
+  {% endif %}
+</fieldset>
+</div>
+
+<script>
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.toggle('active', p.id === 'pane-' + name));
+}
+document.querySelectorAll('.tab-btn').forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+
+function filterEntities(q) {
+  q = q.toLowerCase();
+  document.querySelectorAll('#pane-policy tr[data-search]').forEach(tr => {
+    tr.style.display = tr.dataset.search.includes(q) ? '' : 'none';
+  });
+}
+
+function onKindChange() {
+  const kind = document.querySelector('input[name="rec-kind"]:checked').value;
+  document.getElementById('row-regex').style.display = kind === 'regex' ? '' : 'none';
+  document.getElementById('row-terms').style.display = kind === 'deny_list' ? '' : 'none';
+  document.getElementById('row-context').style.display = kind === 'regex' ? '' : 'none';
+}
+
+function openRecognizerEditor(rec) {
+  document.getElementById('recognizer-editor').style.display = 'block';
+  document.getElementById('rec-error').textContent = '';
+  document.getElementById('rec-test-result').innerHTML = '';
+  document.getElementById('editor-title').textContent = rec ? 'Edit Recognizer' : 'New Recognizer';
+  document.getElementById('rec-id').value = rec ? rec.id : '';
+  document.getElementById('rec-name').value = rec ? rec.name : '';
+  document.getElementById('rec-entity').value = rec ? rec.entity : '';
+  document.querySelector(`input[name="rec-kind"][value="${rec ? rec.kind : 'regex'}"]`).checked = true;
+  document.getElementById('rec-regex').value = rec && rec.kind === 'regex' ? (rec.pattern.regex || '') : '';
+  document.getElementById('rec-terms').value = rec && rec.kind === 'deny_list' ? (rec.pattern.terms || []).join('\n') : '';
+  document.getElementById('rec-score').value = rec ? (rec.pattern.score || 0.75) : 0.75;
+  document.getElementById('rec-context').value = rec ? (rec.context || []).join(', ') : '';
+  document.getElementById('rec-label').value = rec ? rec.label : '';
+  document.getElementById('rec-category').value = rec ? rec.category : '';
+  document.getElementById('rec-severity').value = rec ? rec.severity : 'medium';
+  document.getElementById('rec-action').value = rec ? rec.action : 'redact';
+  document.getElementById('rec-enabled').checked = rec ? rec.enabled : true;
+  onKindChange();
+  document.getElementById('recognizer-editor').scrollIntoView({ behavior: 'smooth' });
+}
+
+function closeRecognizerEditor() {
+  document.getElementById('recognizer-editor').style.display = 'none';
+}
+
+function collectRecognizerPayload() {
+  const kind = document.querySelector('input[name="rec-kind"]:checked').value;
+  const pattern = kind === 'regex'
+    ? { regex: document.getElementById('rec-regex').value, score: parseFloat(document.getElementById('rec-score').value) }
+    : { terms: document.getElementById('rec-terms').value.split('\n').map(s => s.trim()).filter(Boolean),
+        score: parseFloat(document.getElementById('rec-score').value) };
+  const context = document.getElementById('rec-context').value.split(',').map(s => s.trim()).filter(Boolean);
+  return {
+    name: document.getElementById('rec-name').value,
+    entity: document.getElementById('rec-entity').value.trim().toUpperCase(),
+    kind, pattern, context,
+    label: document.getElementById('rec-label').value,
+    category: document.getElementById('rec-category').value,
+    severity: document.getElementById('rec-severity').value,
+    action: document.getElementById('rec-action').value,
+    enabled: document.getElementById('rec-enabled').checked,
+  };
+}
+
+async function testRecognizer() {
+  const payload = collectRecognizerPayload();
+  payload.sample_text = document.getElementById('rec-sample').value;
+  const res = await fetch('/api/admin/recognizers/test', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  const el = document.getElementById('rec-test-result');
+  if (!res.ok) { el.innerHTML = `<span style="color:#c0392b;">${data.error}</span>`; return; }
+  let html = `<p><b>${data.count}</b> match(es)${data.warning ? ` — <span style="color:#c0392b;">${data.warning}</span>` : ''}</p>`;
+  if (data.matches.length) {
+    html += '<ul>' + data.matches.map(m => `<li><code>${m.text}</code> (chars ${m.start}-${m.end})</li>`).join('') + '</ul>';
+  }
+  el.innerHTML = html;
+}
+
+async function saveRecognizer() {
+  const id = document.getElementById('rec-id').value;
+  const payload = collectRecognizerPayload();
+  const url = id ? `/api/admin/recognizers/${id}` : '/api/admin/recognizers';
+  const method = id ? 'PUT' : 'POST';
+  const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  const data = await res.json();
+  if (!res.ok) { document.getElementById('rec-error').textContent = data.error; return; }
+  window.location.reload();
+}
+
+async function toggleRecognizer(id) {
+  await fetch(`/api/admin/recognizers/${id}/toggle`, { method: 'POST' });
+  window.location.reload();
+}
+
+async function deleteRecognizer(id, name) {
+  if (!confirm(`Delete recognizer "${name}"? This cannot be undone.`)) return;
+  await fetch(`/api/admin/recognizers/${id}`, { method: 'DELETE' });
+  window.location.reload();
+}
+</script>
+
+{% endblock %}

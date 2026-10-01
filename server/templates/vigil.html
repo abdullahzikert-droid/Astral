@@ -1,0 +1,428 @@
+{% extends "base.html" %}
+{% block title %}Vigil — Prompt Injection & Client Tools{% endblock %}
+{% block content %}
+
+<style>
+  /* ── Tab switcher ── */
+  .tab-bar {
+    display: flex; gap: 0; margin-bottom: 24px;
+    border-bottom: 2px solid var(--border-color);
+  }
+  .tab-btn {
+    background: none; border: none; box-shadow: none;
+    color: var(--text-secondary); font-size: 13px; font-weight: 600;
+    padding: 10px 22px; border-radius: 0; cursor: pointer;
+    border-bottom: 2px solid transparent; margin-bottom: -2px;
+    transition: color .15s ease; letter-spacing: .02em;
+  }
+  .tab-btn:hover { color: #fff; transform: none; }
+  .tab-btn.active { color: #fff; border-bottom: 2px solid var(--primary-color); background: none; box-shadow: none; }
+  .tab-pane { display: none; }
+  .tab-pane.active { display: block; animation: fadeIn .2s ease; }
+
+  /* ── Client Tiles grid ── */
+  .client-tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+  }
+  .client-tile {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px; padding: 22px 20px;
+    cursor: pointer;
+    transition: transform .18s ease, border-color .18s ease, box-shadow .18s ease;
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    box-shadow: var(--shadow-lg);
+    position: relative; overflow: hidden;
+  }
+  .client-tile::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; height: 3px;
+    background: var(--primary-gradient);
+    opacity: 0; transition: opacity .18s;
+  }
+  .client-tile:hover { transform: translateY(-3px); border-color: rgba(99,102,241,.4); box-shadow: 0 16px 32px rgba(0,0,0,.4); }
+  .client-tile:hover::before { opacity: 1; }
+  .client-tile:active { transform: translateY(-1px); }
+
+  .tile-icon {
+    width: 46px; height: 46px; border-radius: 12px;
+    background: var(--primary-gradient);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; margin-bottom: 14px;
+    box-shadow: 0 4px 12px rgba(99,102,241,.3);
+  }
+  .tile-name {
+    font-size: 15px; font-weight: 700; color: #fff;
+    margin-bottom: 4px; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .tile-id {
+    font-size: 11px; color: var(--text-secondary);
+    font-family: monospace; margin-bottom: 14px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .tile-stats {
+    display: flex; gap: 10px; flex-wrap: wrap;
+  }
+  .tile-stat {
+    font-size: 11px; font-weight: 600; padding: 3px 10px;
+    border-radius: 20px; white-space: nowrap;
+  }
+  .tile-stat.tools { background: rgba(99,102,241,.15); color: #a5b4fc; }
+  .tile-stat.ai    { background: rgba(129,140,248,.15); color: #818cf8; }
+  .tile-stat.pkg   { background: rgba(96,165,250,.15);  color: #60a5fa; }
+  .tile-scanned {
+    margin-top: 12px; font-size: 11px; color: #475569;
+  }
+  .tile-arrow {
+    position: absolute; bottom: 16px; right: 16px;
+    color: var(--text-secondary); font-size: 16px;
+    transition: transform .18s, color .18s;
+  }
+  .client-tile:hover .tile-arrow { transform: translateX(3px); color: #6366f1; }
+
+  /* ── Detail view ── */
+  .detail-view { display: none; }
+  .detail-view.visible { display: block; animation: slideIn .22s ease; }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateX(12px); }
+    to   { opacity: 1; transform: translateX(0); }
+  }
+
+  .detail-header {
+    display: flex; align-items: center; gap: 14px; margin-bottom: 22px;
+  }
+  .back-btn {
+    background: rgba(255,255,255,.07); color: var(--text-secondary);
+    border: 1px solid var(--border-color); border-radius: 8px;
+    padding: 8px 14px; font-size: 13px; font-weight: 600;
+    cursor: pointer; transition: all .15s; box-shadow: none;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .back-btn:hover { background: rgba(255,255,255,.12); color: #fff; transform: translateX(-2px); box-shadow: none; }
+  .detail-client-name { font-size: 20px; font-weight: 700; color: #fff; }
+  .detail-client-meta { font-size: 12px; color: var(--text-secondary); margin-left: auto; text-align: right; }
+
+  .tool-search {
+    background: var(--bg-code); color: #fff;
+    border: 1px solid var(--border-color); border-radius: 8px;
+    padding: 9px 14px; font-size: 13px; width: 280px;
+    outline: none; margin-bottom: 20px;
+    transition: border-color .2s;
+  }
+  .tool-search:focus { border-color: var(--primary-color); }
+  .tool-search::placeholder { color: #475569; }
+
+  /* Category sections */
+  .cat-section { margin-bottom: 24px; }
+  .cat-header {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .08em; color: var(--text-secondary);
+    margin-bottom: 10px; display: flex; align-items: center; gap: 8px;
+  }
+  .cat-header::after { content: ''; flex: 1; height: 1px; background: var(--border-color); }
+
+  .tools-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 8px;
+  }
+  .tool-card {
+    background: rgba(15,23,42,.5); border: 1px solid var(--border-color);
+    border-radius: 8px; padding: 11px 14px;
+    display: flex; align-items: flex-start; gap: 10px;
+    transition: background .15s;
+  }
+  .tool-card:hover { background: rgba(255,255,255,.04); border-color: rgba(255,255,255,.12); }
+  .tool-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 6px;
+  }
+  .dot-ai        { background: #818cf8; box-shadow: 0 0 6px #818cf8aa; }
+  .dot-ide       { background: #34d399; box-shadow: 0 0 6px #34d399aa; }
+  .dot-cli       { background: #f59e0b; box-shadow: 0 0 6px #f59e0baa; }
+  .dot-ext       { background: #a78bfa; box-shadow: 0 0 6px #a78bfaaa; }
+  .dot-python    { background: #60a5fa; box-shadow: 0 0 6px #60a5faaa; }
+  .dot-config    { background: #94a3b8; }
+  .dot-terminal  { background: #2dd4bf; box-shadow: 0 0 6px #2dd4bfaa; }
+  .dot-default   { background: var(--text-secondary); }
+
+  .tool-body { flex: 1; min-width: 0; }
+  .tool-name { font-size: 13px; font-weight: 600; color: #fff; }
+  .tool-ver {
+    font-size: 10px; font-weight: 600; color: var(--success-color);
+    background: rgba(16,185,129,.12); padding: 1px 7px; border-radius: 4px; margin-left: 6px;
+  }
+  .tool-note { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+  .tool-path {
+    font-size: 10px; color: #334155; font-family: monospace;
+    margin-top: 3px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  /* Empty state */
+  .no-scan {
+    text-align: center; color: var(--text-secondary);
+    padding: 60px 20px; font-size: 14px;
+  }
+  .no-scan code {
+    background: var(--bg-code); color: #34d399; padding: 10px 20px;
+    border-radius: 8px; display: inline-block; margin-top: 12px;
+    font-size: 13px; font-family: monospace;
+  }
+
+  /* Badge in tab button */
+  .tab-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--primary-gradient); color: #fff;
+    font-size: 10px; font-weight: 700; padding: 1px 7px;
+    border-radius: 20px; margin-left: 6px; vertical-align: middle;
+  }
+</style>
+
+<!-- ─── Tab bar ─── -->
+<div class="tab-bar">
+  <button class="tab-btn active" id="btn-reports" onclick="switchTab('reports')">Injection Reports</button>
+  <button class="tab-btn" id="btn-tools" onclick="switchTab('tools')">
+    Client Tools
+    <span class="tab-badge">{{ tool_scans | length }}</span>
+  </button>
+</div>
+
+
+<!-- ═══════════════════ TAB 1: Injection Reports ═══════════════════ -->
+<div class="tab-pane active" id="pane-reports">
+  <h2>Vigil — Prompt Injection Attempts</h2>
+
+  <form method="get" class="filter-form">
+    <label for="client">Filter by client:</label>
+    <select name="client" id="client" onchange="this.form.submit()">
+      <option value="">All clients</option>
+      {% for c in clients %}
+        <option value="{{ c.client_id }}" {{ 'selected' if c.client_id == client_filter }}>
+          {{ c.name }} ({{ c.client_id }}) — {{ c.status }}
+        </option>
+      {% endfor %}
+    </select>
+  </form>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Time</th><th>Client</th><th>Provider</th><th>Path</th>
+        <th>Action</th><th>Score</th><th>Prompt</th><th>Hits</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for r in reports %}
+      <tr>
+        <td class="small">{{ r.ts | int | datetimeformat }}</td>
+        <td>{{ r.client_name }} <span class="small">({{ r.client_id }})</span></td>
+        <td>{{ r.provider }}</td>
+        <td class="small">{{ r.path }}</td>
+        <td>
+          {% if r.action == 'block' %}<span style="color:var(--danger-color);font-weight:600;">{{ r.action }}</span>
+          {% elif r.action == 'warn' %}<span style="color:var(--warning-color);font-weight:600;">{{ r.action }}</span>
+          {% else %}<span style="font-weight:500;">{{ r.action }}</span>{% endif %}
+        </td>
+        <td>{{ r.score if r.score is not none else '-' }}</td>
+        <td>
+          {% if r.prompt %}
+          <details class="prompt-details">
+            <summary>View Prompt</summary>
+            <div class="prompt-content">{{ r.prompt }}</div>
+          </details>
+          {% else %}
+          <span class="small" style="color:var(--text-secondary);font-style:italic;">No prompt captured</span>
+          {% endif %}
+        </td>
+        <td>{% set hits = r.hits %}{% include "_proof.html" %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="8" style="text-align:center;color:var(--text-secondary);padding:30px;">No prompt-injection reports yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="tab-pane" id="pane-tools">
+
+  <!-- ── Tile grid (default view) ── -->
+  <div id="tiles-view">
+    <h2>Client Tool Inventory</h2>
+
+    {% if tool_scans %}
+    <div class="client-tiles">
+      {% for scan in tool_scans %}
+      {% set ai_count  = scan.tools | selectattr('category', 'in', ['AI Assistant', 'AI IDE']) | list | length %}
+      {% set pkg_count = scan.tools | selectattr('category', 'equalto', 'Python Package') | list | length %}
+      <div class="client-tile" onclick="openClient('{{ scan.client_id }}')" id="tile-{{ scan.client_id | replace('-','_') }}">
+        <div class="tile-icon">🖥️</div>
+        <div class="tile-name">{{ scan.client_name }}</div>
+        <div class="tile-id">{{ scan.client_id }}</div>
+        <div class="tile-stats">
+          <span class="tile-stat tools">{{ scan.tools | length }} tools</span>
+          {% if ai_count %}<span class="tile-stat ai">{{ ai_count }} AI</span>{% endif %}
+          {% if pkg_count %}<span class="tile-stat pkg">{{ pkg_count }} packages</span>{% endif %}
+        </div>
+        <div class="tile-scanned">Scanned {{ scan.ts | int | datetimeformat }}</div>
+        <span class="tile-arrow">→</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% else %}
+    <div class="no-scan">
+      <p>No tool inventory received yet.</p>
+      <p>The client scans automatically on startup. Make sure <strong>apexion_addon.py</strong> is running.</p>
+      <code>python apexion_addon.py</code>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ── Detail view (shown after tile click) ── -->
+  <div id="detail-view" class="detail-view">
+    <div class="detail-header">
+      <button class="back-btn" onclick="closeDetail()">← Back</button>
+      <div>
+        <div class="detail-client-name" id="detail-name"></div>
+        <div class="tile-id" id="detail-id" style="margin-bottom:0;"></div>
+      </div>
+      <div class="detail-client-meta" id="detail-meta"></div>
+    </div>
+
+    <input class="tool-search" id="tool-search-input" type="text" placeholder="Search tools…" oninput="filterTools(this.value)">
+
+    <div id="detail-tools-container"></div>
+  </div>
+
+</div><!-- end pane-tools -->
+
+
+<!-- ════════════════════ Tool data (embedded JSON) ════════════════════ -->
+<script>
+/* All scan data embedded at render time — no extra fetch needed */
+const SCANS = {{ tool_scans | tojson }};
+
+const CAT_ORDER = [
+  'AI Assistant','AI IDE','IDE','Terminal',
+  'CLI Tool','VS Code Extension','Python Package','Config'
+];
+const CAT_META = {
+  'AI Assistant':     { emoji:'🤖', label:'AI Assistants',       dot:'dot-ai'      },
+  'AI IDE':           { emoji:'⚡', label:'AI IDEs',             dot:'dot-ide'      },
+  'IDE':              { emoji:'💻', label:'IDEs',                 dot:'dot-ide'      },
+  'Terminal':         { emoji:'🖥️', label:'Terminals',            dot:'dot-terminal' },
+  'CLI Tool':         { emoji:'🔧', label:'CLI Tools',            dot:'dot-cli'      },
+  'VS Code Extension':{ emoji:'🧩', label:'VS Code Extensions',  dot:'dot-ext'      },
+  'Python Package':   { emoji:'🐍', label:'Python Packages',     dot:'dot-python'   },
+  'Config':           { emoji:'📁', label:'Config Dirs',         dot:'dot-config'   },
+};
+
+function dotClass(cat) {
+  return (CAT_META[cat] || {}).dot || 'dot-default';
+}
+
+function openClient(clientId) {
+  const scan = SCANS.find(s => s.client_id === clientId);
+  if (!scan) return;
+
+  document.getElementById('detail-name').textContent = scan.client_name;
+  document.getElementById('detail-id').textContent   = scan.client_id;
+  const d = new Date(scan.ts * 1000);
+  document.getElementById('detail-meta').innerHTML =
+    `Last scanned<br><strong>${d.toLocaleString()}</strong><br>${scan.tools.length} tools found`;
+
+  // Build tools HTML grouped by category
+  const container = document.getElementById('detail-tools-container');
+  container.innerHTML = '';
+  document.getElementById('tool-search-input').value = '';
+
+  const known = new Set(CAT_ORDER);
+  const grouped = {};
+  CAT_ORDER.forEach(c => grouped[c] = []);
+  const other = [];
+
+  scan.tools.forEach(t => {
+    if (known.has(t.category)) grouped[t.category].push(t);
+    else other.push(t);
+  });
+
+  CAT_ORDER.forEach(cat => {
+    const tools = grouped[cat];
+    if (!tools.length) return;
+    const m = CAT_META[cat] || { emoji:'📦', label: cat };
+    const sec = document.createElement('div');
+    sec.className = 'cat-section';
+    sec.dataset.cat = cat;
+    sec.innerHTML = `<div class="cat-header">${m.emoji} ${m.label}</div>
+      <div class="tools-grid">${tools.map(t => toolCardHTML(t)).join('')}</div>`;
+    container.appendChild(sec);
+  });
+
+  if (other.length) {
+    const sec = document.createElement('div');
+    sec.className = 'cat-section';
+    sec.dataset.cat = 'other';
+    sec.innerHTML = `<div class="cat-header">📦 Other</div>
+      <div class="tools-grid">${other.map(t => toolCardHTML(t)).join('')}</div>`;
+    container.appendChild(sec);
+  }
+
+  document.getElementById('tiles-view').style.display  = 'none';
+  const dv = document.getElementById('detail-view');
+  dv.classList.add('visible');
+}
+
+function toolCardHTML(t) {
+  const dot  = dotClass(t.category);
+  const note = t.note  ? `<div class="tool-note">${esc(t.note)}</div>`  : '';
+  const path = t.path  ? `<div class="tool-path">${esc(t.path)}</div>`  : '';
+  return `<div class="tool-card" data-search="${esc((t.name+' '+t.note+' '+t.version).toLowerCase())}">
+    <div class="tool-dot ${dot}"></div>
+    <div class="tool-body">
+      <div><span class="tool-name">${esc(t.name)}</span><span class="tool-ver">${esc(t.version)}</span></div>
+      ${note}${path}
+    </div>
+  </div>`;
+}
+
+function esc(s) {
+  if (!s) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function closeDetail() {
+  document.getElementById('detail-view').classList.remove('visible');
+  document.getElementById('tiles-view').style.display = '';
+}
+
+function filterTools(q) {
+  q = q.toLowerCase().trim();
+  document.querySelectorAll('#detail-tools-container .tool-card').forEach(card => {
+    const match = !q || (card.dataset.search||'').includes(q);
+    card.style.display = match ? '' : 'none';
+  });
+  document.querySelectorAll('#detail-tools-container .cat-section').forEach(sec => {
+    const any = [...sec.querySelectorAll('.tool-card')].some(c => c.style.display !== 'none');
+    sec.style.display = any ? '' : 'none';
+  });
+}
+
+/* ── Tab logic ── */
+function switchTab(name) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.getElementById('btn-'  + name).classList.add('active');
+  document.getElementById('pane-' + name).classList.add('active');
+  sessionStorage.setItem('vigilTab', name);
+}
+
+// Restore saved tab
+const savedTab = sessionStorage.getItem('vigilTab');
+if (savedTab) switchTab(savedTab);
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => sessionStorage.setItem('vigilTab', btn.id.replace('btn-', '')));
+});
+</script>
+
+{% endblock %}

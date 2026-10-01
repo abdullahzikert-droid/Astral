@@ -1,0 +1,5 @@
+flask
+python-dotenv
+numpy
+scikit-learn
+anthropic   # optional: AI isolation recommendations (needs ANTHROPIC_API_KEY)

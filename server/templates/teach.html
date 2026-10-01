@@ -1,0 +1,336 @@
+{% extends "base.html" %}
+{% block title %}Teach Astral{% endblock %}
+{% block content %}
+
+<h2>Teach Astral <span class="small" style="color:var(--text-secondary); font-weight:400;">— custom information types</span></h2>
+<p class="small" style="color:var(--text-secondary); margin-bottom:24px; max-width:64ch;">
+  Show Astral what your company's sensitive information looks like — a customer account number, an internal
+  project codename, anything the built-in patterns don't cover. Astral learns the pattern, tests itself, and
+  pushes the detector to every connected client.
+</p>
+
+<div id="ask"></div>
+
+<div style="display:flex; justify-content:space-between; align-items:center; margin:24px 0 12px;">
+  <h3 style="margin:0;">Your information types</h3>
+  <button class="primary-btn" id="openWizard">+ Add information type</button>
+</div>
+<div id="list"><p class="small" style="color:var(--text-secondary);">Loading…</p></div>
+
+<div class="card" style="margin-top:28px;">
+  <h3 style="margin-top:0;">Try it</h3>
+  <p class="small" style="color:var(--text-secondary); margin-bottom:10px;">Paste text to see what Astral would catch.</p>
+  <textarea id="tryText" style="width:100%; min-height:80px;" placeholder="Why is ACCT-112233 showing a negative balance?"></textarea>
+  <div style="margin-top:8px;"><button class="primary-btn" id="tryBtn">Check text</button></div>
+  <div id="tryOut" style="margin-top:12px; font-size:13px; line-height:1.7;"></div>
+</div>
+
+<!-- Wizard modal -->
+<div id="wizardOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:200; align-items:center; justify-content:center;">
+  <div class="card" style="width:min(560px, 92vw); max-height:88vh; overflow:auto;">
+    <div id="wizardBody"></div>
+  </div>
+</div>
+
+<style>
+  mark.seen { background: rgba(16,185,129,.28); color: #34d399; padding: 0 3px; border-radius: 3px; font-family: monospace; }
+  mark.unsure { background: rgba(245,158,11,.22); color: #fbbf24; padding: 0 3px; border-radius: 3px; font-family: monospace; }
+  .det-card { display:flex; flex-direction:column; gap:10px; margin-bottom:12px; }
+  .det-top { display:flex; justify-content:space-between; align-items:flex-start; gap:12px; flex-wrap:wrap; }
+  .switch { position:relative; display:inline-block; width:38px; height:22px; flex-shrink:0; }
+  .switch input { opacity:0; width:0; height:0; }
+  .slider { position:absolute; cursor:pointer; inset:0; background:var(--bg-tertiary); border:1px solid var(--border-color); border-radius:22px; transition:.15s; }
+  .slider::before { content:""; position:absolute; height:16px; width:16px; left:2px; top:2px; background:#fff; border-radius:50%; transition:.15s; }
+  .switch input:checked + .slider { background: var(--success-color); }
+  .switch input:checked + .slider::before { transform: translateX(16px); }
+  .meter { height:6px; background:var(--bg-tertiary); border-radius:99px; overflow:hidden; margin:4px 0; }
+  .meter i { display:block; height:100%; background: var(--success-color); }
+  .meter.mid i { background: var(--warning-color); } .meter.low i { background: var(--danger-color); }
+  .seg { display:inline-flex; border:1px solid var(--border-color); border-radius:6px; overflow:hidden; }
+  .seg button { border:0; background:transparent; color:var(--text-secondary); padding:5px 10px; font-size:12px; cursor:pointer; }
+  .seg button.on { background: var(--primary-color); color:#fff; }
+  .chip { display:inline-block; border:1px solid var(--border-color); border-radius:99px; padding:5px 12px; font-size:12.5px; cursor:pointer; margin:3px; background:var(--bg-tertiary); color:var(--text-primary); }
+  .chip.on { background: var(--primary-color); border-color: var(--primary-color); color:#fff; }
+  .warn-box { font-size:12.5px; color:#fbbf24; background:rgba(245,158,11,.1); border:1px solid rgba(245,158,11,.2); border-radius:6px; padding:8px 10px; }
+  .err-box { font-size:12.5px; color:#f87171; margin-top:6px; }
+  .ex-row { display:flex; gap:8px; margin-bottom:8px; }
+  .ex-row input { flex:1; }
+  .quiet-btn { background:none; border:none; color:var(--text-secondary); text-decoration:underline; cursor:pointer; font-size:12.5px; padding:4px; }
+  .checklist label { display:flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--border-color); border-radius:8px; margin-bottom:6px; cursor:pointer; font-size:13px; }
+</style>
+
+<script>
+"use strict";
+const $ = (s, r=document) => r.querySelector(s);
+async function api(path, opts={}) {
+  const res = await fetch(path, { ...opts, headers: { "Content-Type": "application/json", ...(opts.headers||{}) } });
+  let body = {};
+  try { body = await res.json(); } catch {}
+  if (!res.ok) throw new Error(body.error || "Something went wrong.");
+  return body;
+}
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+
+async function refresh() {
+  try {
+    const [d, q] = await Promise.all([api("/teach/api/detectors"), api("/teach/api/questions")]);
+    renderList(d.detectors); renderAsk(q.questions);
+  } catch (e) { $("#list").innerHTML = `<p class="err-box">${esc(e.message)}</p>`; }
+}
+
+function renderList(items) {
+  const el = $("#list");
+  if (!items.length) {
+    el.innerHTML = `<div class="card" style="text-align:center; color:var(--text-secondary);">
+      Nothing added yet. Start with something your team handles every day — a customer number, a contract reference.</div>`;
+    return;
+  }
+  el.innerHTML = items.map(d => {
+    const acc = d.accuracy, cls = acc==null ? "" : acc>=85 ? "" : acc>=70 ? "mid" : "low";
+    const on = d.protection === "on", ready = d.status === "ready";
+    return `<div class="card det-card" data-id="${esc(d.id)}">
+      <div class="det-top">
+        <div><strong>${esc(d.name)}</strong><br><span class="small" style="color:${d.status==='failed'?'#f87171':d.status==='learning'?'#fbbf24':'#34d399'};">${esc(d.state)}</span></div>
+        <label class="switch" title="Protection"><input type="checkbox" ${on?"checked":""} ${ready?"":"disabled"} data-act="toggle"><span class="slider"></span></label>
+      </div>
+      ${ready ? `<div class="small" style="color:var(--text-secondary);">How well Astral recognises it: <strong style="color:#fff;">${acc==null?"—":acc+"%"}</strong></div>
+        <div class="meter ${cls}"><i style="width:${acc||0}%"></i></div>` : ""}
+      ${(d.warnings||[]).map(w => `<div class="warn-box">${esc(w)}</div>`).join("")}
+      <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        ${ready ? `<span class="small" style="color:var(--text-secondary);">When found:</span>
+        <span class="seg">
+          <button data-act="action" data-v="warn" class="${d.action==='warn'?'on':''}">Warn</button>
+          <button data-act="action" data-v="redact" class="${d.action==='redact'?'on':''}">Hide it</button>
+          <button data-act="action" data-v="block" class="${d.action==='block'?'on':''}">Block</button>
+        </span>` : ""}
+        <span style="flex:1"></span>
+        ${ready ? `<button class="topbar-btn" data-act="improve">Improve detection</button>` : ""}
+        <button class="topbar-btn btn-danger" data-act="delete">Remove</button>
+      </div>
+      <div class="improve-slot"></div>
+    </div>`;
+  }).join("");
+}
+
+document.addEventListener("click", async e => {
+  const b = e.target.closest("[data-act]"); if (!b) return;
+  const card = b.closest(".det-card"); const id = card && card.dataset.id;
+  try {
+    if (b.dataset.act === "action") { await api(`/teach/api/detectors/${id}/action`, {method:"POST", body: JSON.stringify({action: b.dataset.v})}); refresh(); }
+    if (b.dataset.act === "delete") { if (confirm("Remove this information type? Astral will stop protecting it on every client.")) { await api(`/teach/api/detectors/${id}`, {method:"DELETE"}); refresh(); } }
+    if (b.dataset.act === "improve") openImprove(card, id);
+  } catch (err) { alert(err.message); }
+});
+document.addEventListener("change", async e => {
+  const b = e.target.closest('[data-act="toggle"]'); if (!b) return;
+  const id = b.closest(".det-card").dataset.id;
+  try { await api(`/teach/api/detectors/${id}/enabled`, {method:"POST", body: JSON.stringify({enabled: b.checked})}); refresh(); }
+  catch (err) { alert(err.message); b.checked = !b.checked; }
+});
+$("#openWizard").onclick = () => openWizard();
+
+function openImprove(card, id) {
+  const slot = card.querySelector(".improve-slot");
+  if (slot.innerHTML) { slot.innerHTML = ""; return; }
+  slot.innerHTML = `<div style="border-top:1px solid var(--border-color); padding-top:10px; margin-top:4px;">
+    <div class="small" style="color:var(--text-secondary); margin-bottom:6px;">Give Astral more examples, one per line.</div>
+    <textarea style="width:100%; min-height:70px;"></textarea>
+    <div class="err-box"></div>
+    <div style="margin-top:8px;"><button class="primary-btn" data-x="save">Teach these</button></div>
+  </div>`;
+  slot.querySelector('[data-x="save"]').onclick = async ev => {
+    const lines = slot.querySelector("textarea").value.split("\n").map(s=>s.trim()).filter(Boolean);
+    if (!lines.length) return slot.querySelector(".err-box").textContent = "Add at least one example.";
+    ev.target.disabled = true;
+    try { await api(`/teach/api/detectors/${id}/examples`, {method:"POST", body: JSON.stringify({examples: lines})});
+      slot.innerHTML = ""; setTimeout(refresh, 1200);
+    } catch (e) { slot.querySelector(".err-box").textContent = e.message; ev.target.disabled = false; }
+  };
+}
+
+function renderAsk(qs) {
+  const el = $("#ask");
+  if (!qs.length) { el.innerHTML = ""; return; }
+  const q = qs[0];
+  const i = q.context.indexOf(q.value);
+  const ctx = i < 0 ? esc(q.context) : `${esc(q.context.slice(0,i))}<mark class="unsure">${esc(q.value)}</mark>${esc(q.context.slice(i+q.value.length))}`;
+  el.innerHTML = `<div class="card" style="border-color: rgba(245,158,11,.35); margin-bottom:20px;">
+    <strong style="color:#fbbf24;">Astral needs your help</strong>
+    <div class="small" style="margin:8px 0; background:rgba(0,0,0,.25); padding:8px 10px; border-radius:6px;">…${ctx}…</div>
+    <div style="margin-bottom:10px;">Could <code>${esc(q.value)}</code> be your <strong>${esc(q.detector_name)}</strong>?</div>
+    <button class="primary-btn" data-a="yes">Yes</button>
+    <button class="topbar-btn" data-a="no" style="margin-left:8px;">No</button>
+    ${qs.length>1 ? `<span class="small" style="color:var(--text-secondary); margin-left:10px;">${qs.length-1} more waiting</span>` : ""}
+  </div>`;
+  el.querySelectorAll("[data-a]").forEach(btn => btn.onclick = async () => {
+    btn.disabled = true;
+    try { await api(`/teach/api/questions/${q.id}/answer`, {method:"POST", body: JSON.stringify({is_match: btn.dataset.a==="yes"})}); refresh(); }
+    catch (e) { alert(e.message); btn.disabled = false; }
+  });
+}
+
+$("#tryBtn").onclick = async () => {
+  const out = $("#tryOut");
+  out.innerHTML = `<span class="small" style="color:var(--text-secondary);">Detection runs on the client (Apexion agent) against live AI traffic — this admin page manages what's taught, not a live scanner. Watch the Apexion dashboard for real hits from your taught types.</span>`;
+};
+
+/* Wizard */
+const CATS = {
+  Personal: [["Phone numbers", ["+92 300 1234567","+92 321 7654321","+92 333 5550142"]]],
+  Financial: [["Invoice numbers", ["INV-2024-0042","INV-2024-0187","INV-2025-0009"]]],
+  Company: [["Customer IDs", ["CUST-104822","CUST-337190","CUST-560031"]], ["Employee IDs", ["EMP-10291","EMP-10482","EMP-22017"]], ["Contract numbers", ["CN-2024-0091","CN-2025-0310","CN-2023-0777"]]],
+};
+let W = null;
+function openWizard(prefill) {
+  W = Object.assign({ step:"pick", name:"", examples:["","",""], surfaces:{email:true,document:true,chat:true,ai:true,code:false}, action:"redact" }, prefill||{});
+  $("#wizardOverlay").style.display = "flex";
+  renderWizard();
+}
+function closeWizard() { $("#wizardOverlay").style.display = "none"; W = null; refresh(); }
+function renderWizard() {
+  ({pick:wPick, define:wDefine, upload:wUpload, where:wWhere, learning:wLearning, check:wCheck}[W.step])();
+}
+
+function wPick() {
+  $("#wizardBody").innerHTML = `<h3 style="margin-top:0;">Add an information type</h3>
+    <p class="small" style="color:var(--text-secondary);">Pick a common one, or teach Astral something specific to your company.</p>
+    ${Object.entries(CATS).map(([g,items]) => `<div style="margin-bottom:14px;"><div class="small" style="color:var(--text-secondary); margin-bottom:4px;">${g}</div>
+      ${items.map(([n]) => `<span class="chip" data-n="${esc(n)}">${esc(n)}</span>`).join("")}</div>`).join("")}
+    <div style="margin-top:10px;"><span class="chip" id="mine">Describe it myself</span><span class="chip" id="up">Find examples in a document</span></div>
+    <div style="margin-top:18px; text-align:right;"><button class="topbar-btn" id="cancel">Cancel</button></div>`;
+  $("#cancel").onclick = closeWizard;
+  document.querySelectorAll("#wizardBody .chip[data-n]").forEach(c => c.onclick = () => {
+    const all = Object.values(CATS).flat();
+    const item = all.find(x => x[0] === c.dataset.n);
+    W.name = item[0]; W.examples = item[1].slice(); while (W.examples.length<3) W.examples.push(""); W.step="define"; renderWizard();
+  });
+  $("#mine").onclick = () => { W.step="define"; renderWizard(); };
+  $("#up").onclick = () => { W.step="upload"; renderWizard(); };
+}
+
+function wDefine() {
+  $("#wizardBody").innerHTML = `<h3 style="margin-top:0;">Tell Astral what it looks like</h3>
+    <label class="small">Name</label>
+    <input type="text" id="nm" style="width:100%; margin:6px 0 14px;" value="${esc(W.name)}" placeholder="Customer account number">
+    <label class="small">Examples</label>
+    <div id="rows" style="margin-top:6px;">${W.examples.map((v,i)=>`<div class="ex-row"><input type="text" data-i="${i}" value="${esc(v)}" placeholder="ACCT-839201"></div>`).join("")}</div>
+    <button class="quiet-btn" id="more">+ Add another example</button>
+    <div class="err-box" id="e"></div>
+    <div style="margin-top:16px; display:flex; justify-content:space-between;">
+      <button class="topbar-btn" id="back">Back</button><button class="primary-btn" id="next">Continue</button></div>`;
+  const sync = () => { W.name = $("#nm").value; W.examples = [...document.querySelectorAll("#rows input")].map(i=>i.value); };
+  $("#more").onclick = () => { sync(); W.examples.push(""); wDefine(); };
+  $("#back").onclick = () => { sync(); W.step="pick"; renderWizard(); };
+  $("#next").onclick = () => {
+    sync(); const ex = W.examples.map(s=>s.trim()).filter(Boolean);
+    if (W.name.trim().length < 2) return $("#e").textContent = "Give this a name.";
+    if (!ex.length) return $("#e").textContent = "Add at least one example.";
+    W.step = "where"; renderWizard();
+  };
+}
+
+function wUpload() {
+  $("#wizardBody").innerHTML = `<h3 style="margin-top:0;">Show Astral a sample</h3>
+    <p class="small" style="color:var(--text-secondary);">Upload a file with the information (CSV, JSON, or plain text).</p>
+    <label class="small">What should Astral protect?</label>
+    <input type="text" id="nm" style="width:100%; margin:6px 0 14px;" placeholder="Employee ID">
+    <input type="file" id="fl" accept=".txt,.csv,.json,.tsv,.log,text/*">
+    <div class="err-box" id="e"></div><div id="found" style="margin-top:12px;"></div>
+    <div style="margin-top:16px; display:flex; justify-content:space-between;">
+      <button class="topbar-btn" id="back">Back</button><button class="primary-btn" id="go">Find examples</button></div>`;
+  $("#back").onclick = () => { W.step="pick"; renderWizard(); };
+  $("#go").onclick = async () => {
+    const name = $("#nm").value.trim(), f = $("#fl").files[0];
+    if (name.length < 2) return $("#e").textContent = "Say what you want Astral to protect.";
+    if (!f) return $("#e").textContent = "Choose a file first.";
+    $("#e").textContent = ""; $("#go").disabled = true;
+    try {
+      const fd = new FormData(); fd.append("name", name); fd.append("file", f);
+      const res = await fetch("/teach/api/extract/file", { method:"POST", body: fd });
+      const r = await res.json();
+      if (!res.ok) throw new Error(r.error || "Couldn't read that file.");
+      if (!r.best.count) { $("#found").innerHTML = `<div class="warn-box">Astral didn't find anything ID-like. Try a different file or describe it yourself.</div>`; $("#go").disabled=false; return; }
+      $("#found").innerHTML = `<p><strong>Found ${r.best.count} possible ${esc(name)} values.</strong></p>
+        ${r.best.examples.slice(0,8).map(x=>`<code style="margin:2px; display:inline-block; background:rgba(0,0,0,.3); padding:2px 6px; border-radius:4px;">${esc(x)}</code>`).join("")}
+        <p style="margin-top:10px;">Are these ${esc(name.toLowerCase())}s?</p>
+        <button class="primary-btn" id="yes">Yes, use these</button>`;
+      $("#go").style.display = "none";
+      $("#yes").onclick = () => { W.name = name; W.examples = r.best.examples.slice(0,12); W.step="where"; renderWizard(); };
+    } catch (e) { $("#e").textContent = e.message; $("#go").disabled = false; }
+  };
+}
+
+function wWhere() {
+  const L = {email:"Emails", document:"Documents", chat:"Chat messages", ai:"AI conversations", code:"Source code"};
+  $("#wizardBody").innerHTML = `<h3 style="margin-top:0;">Where might it appear?</h3>
+    <div class="checklist">${Object.entries(L).map(([k,t])=>`<label><input type="checkbox" data-k="${k}" ${W.surfaces[k]?"checked":""}>${t}</label>`).join("")}</div>
+    <h3>When Astral finds it</h3>
+    <div class="checklist">
+      <label><input type="radio" name="act" value="redact" ${W.action==="redact"?"checked":""}><span><strong>Hide it</strong> — the message goes through, value removed.</span></label>
+      <label><input type="radio" name="act" value="block" ${W.action==="block"?"checked":""}><span><strong>Block</strong> — nothing sent until it's removed.</span></label>
+      <label><input type="radio" name="act" value="warn" ${W.action==="warn"?"checked":""}><span><strong>Warn only</strong> — sent through, flagged on the dashboard.</span></label>
+    </div>
+    <div class="err-box" id="e"></div>
+    <div style="margin-top:16px; display:flex; justify-content:space-between;">
+      <button class="topbar-btn" id="back">Back</button><button class="primary-btn" id="go">Teach Astral</button></div>`;
+  const sync = () => { document.querySelectorAll("#wizardBody [data-k]").forEach(c => W.surfaces[c.dataset.k]=c.checked);
+    W.action = document.querySelector('#wizardBody [name="act"]:checked').value; };
+  $("#back").onclick = () => { sync(); W.step="define"; renderWizard(); };
+  $("#go").onclick = async () => {
+    sync(); const surfaces = Object.keys(W.surfaces).filter(k=>W.surfaces[k]);
+    if (!surfaces.length) return $("#e").textContent = "Pick at least one place.";
+    $("#go").disabled = true;
+    try {
+      const r = await api("/teach/api/detectors", {method:"POST", body: JSON.stringify({name:W.name.trim(), examples:W.examples.map(s=>s.trim()).filter(Boolean), surfaces, action:W.action})});
+      W.id = r.id; W.step = "learning"; renderWizard();
+    } catch (e) { $("#e").textContent = e.message; $("#go").disabled = false; }
+  };
+}
+
+function wLearning() {
+  $("#wizardBody").innerHTML = `<h3 style="margin-top:0;">Astral is learning</h3><p class="small" style="color:var(--text-secondary);">Studying your examples and testing itself — usually a few seconds.</p>`;
+  const t = setInterval(async () => {
+    try {
+      const d = await api(`/teach/api/detectors/${W.id}`);
+      if (d.status === "learning") return;
+      clearInterval(t); W.result = d;
+      if (d.status === "failed") { W.step = "define"; renderWizard(); alert(d.state); return; }
+      W.step = "check"; renderWizard();
+    } catch (e) { clearInterval(t); alert(e.message); }
+  }, 900);
+}
+
+async function wCheck() {
+  let samples = [];
+  try { samples = (await api(`/teach/api/detectors/${W.id}/check`, {method:"POST"})).samples; } catch {}
+  if (!samples.length) return finishWizard();
+  $("#wizardBody").innerHTML = `<h3 style="margin-top:0;">Let's make sure Astral understands</h3>
+    <p class="small" style="color:var(--text-secondary);">Which of these are a ${esc(W.name.toLowerCase())}?</p>
+    <div class="checklist" id="opts">${samples.map((s,i)=>`<label><input type="checkbox" data-i="${i}"><span style="font-family:monospace;">${esc(s.text)}</span></label>`).join("")}</div>
+    <button class="primary-btn" id="ok">Continue</button><div id="fb"></div>`;
+  $("#ok").onclick = () => {
+    const picked = [...document.querySelectorAll("#opts [data-i]")].map(c=>c.checked);
+    const wrong = samples.filter((s,i)=>picked[i]!==s.is_match);
+    if (wrong.length) {
+      $("#fb").innerHTML = `<div class="warn-box" style="margin-top:12px;">Astral saw it differently on ${wrong.length}. That's fine — it'll ask when unsure, and every answer teaches it.</div>
+        <div style="margin-top:10px;"><button class="primary-btn" id="fin">Continue</button></div>`;
+      $("#fin").onclick = finishWizard; $("#ok").style.display = "none";
+    } else finishWizard();
+  };
+}
+
+function finishWizard() {
+  const d = W.result;
+  $("#wizardBody").innerHTML = `<h3 style="margin-top:0;">${esc(W.name)}</h3>
+    <p style="color:#34d399;">Astral has learned to recognize this information.</p>
+    <div class="card" style="margin:14px 0;"><div class="small" style="color:var(--text-secondary);">How well Astral recognises it</div>
+      <div style="font-size:28px; font-weight:700;">${d.accuracy==null?"—":d.accuracy+"%"}</div></div>
+    ${(d.warnings||[]).map(w=>`<div class="warn-box">${esc(w)}</div>`).join("")}
+    <div style="text-align:right; margin-top:14px;"><button class="primary-btn" id="done">Turn protection on</button></div>`;
+  $("#done").onclick = closeWizard;
+}
+
+refresh();
+setInterval(() => { if (document.querySelector('[data-act="toggle"]')) refresh(); }, 4000);
+</script>
+{% endblock %}

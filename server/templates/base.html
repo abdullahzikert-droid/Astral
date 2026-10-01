@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}Apexion / Vigil Manager{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-primary: #050505;
+    --bg-secondary: rgba(20, 20, 22, 0.7);
+    --bg-tertiary: rgba(30, 30, 35, 0.6);
+    --text-primary: #ededed;
+    --text-secondary: #a1a1aa;
+    --border-color: rgba(255, 255, 255, 0.08);
+    --primary-color: #3b82f6;
+    --primary-gradient: linear-gradient(135deg, #3b82f6, #8b5cf6);
+    --success-color: #10b981;
+    --warning-color: #f59e0b;
+    --danger-color: #ef4444;
+    --shadow-lg: 0 10px 25px -5px rgba(0,0,0,.5);
+    --font-sans: 'Inter', system-ui, sans-serif;
+    --sidebar-width: 260px;
+    --topbar-height: 60px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    color: var(--text-primary);
+    background: var(--bg-primary);
+    min-height: 100vh;
+    display: flex;
+    overflow-x: hidden;
+  }
+
+  /* ── Sidebar ── */
+  .sidebar {
+    width: var(--sidebar-width);
+    background: var(--bg-secondary);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-right: 1px solid var(--border-color);
+    position: fixed;
+    top: 0; bottom: 0; left: 0;
+    display: flex;
+    flex-direction: column;
+    z-index: 200;
+  }
+
+  .sidebar-header {
+    height: var(--topbar-height);
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    border-bottom: 1px solid var(--border-color);
+  }
+  .sidebar-header h1 {
+    font-size: 18px; font-weight: 700;
+    background: var(--primary-gradient);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    letter-spacing: -0.5px;
+  }
+
+  .sidebar-nav {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .nav-group-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+    padding-left: 8px;
+  }
+
+  .sidebar-nav a {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-weight: 500;
+    padding: 8px 12px;
+    border-radius: 8px;
+    transition: all 0.2s ease;
+  }
+  .sidebar-nav a:hover {
+    color: var(--text-primary);
+    background: rgba(255,255,255,0.05);
+  }
+  .sidebar-nav a.active {
+    color: #fff;
+    background: rgba(255,255,255,0.1);
+    box-shadow: inset 2px 0 0 var(--primary-color);
+  }
+
+  .proof-hit { margin-bottom: 6px; font-size: 13px; }
+  .proof-hit summary { cursor: pointer; }
+  .proof-layer { display:inline-block; margin-left:6px; padding:1px 8px; border-radius:10px; font-size:11px; background: var(--bg-tertiary); border:1px solid var(--border-color); color: var(--primary-color); }
+  .proof-table { margin: 6px 0 4px 12px; width:auto; font-size:12px; }
+  .proof-table td { padding: 2px 10px 2px 0; vertical-align: top; border: 0; }
+  .proof-table td:first-child { color: var(--text-secondary); white-space: nowrap; }
+  .nav-badge {
+    background: rgba(59, 130, 246, 0.2);
+    color: #93c5fd;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 12px;
+  }
+
+  .sidebar-footer {
+    padding: 16px;
+    border-top: 1px solid var(--border-color);
+    font-size: 12px;
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .status-dot {
+    width: 8px; height: 8px;
+    background: var(--success-color);
+    border-radius: 50%;
+    box-shadow: 0 0 8px var(--success-color);
+  }
+
+  /* ── Main Layout ── */
+  .main-wrapper {
+    margin-left: var(--sidebar-width);
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .topbar {
+    height: var(--topbar-height);
+    background: rgba(5, 5, 5, 0.8);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 32px;
+    position: sticky;
+    top: 0; z-index: 100;
+  }
+
+  .topbar-controls {
+    display: flex; gap: 16px; align-items: center;
+  }
+
+  .topbar-btn {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    color: var(--text-primary);
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .topbar-btn:hover { border-color: var(--primary-color); }
+  .btn-danger { color: var(--danger-color); border-color: rgba(239,68,68,0.3); }
+  .btn-danger:hover { background: rgba(239,68,68,0.1); border-color: var(--danger-color); }
+
+  .coverage-strip {
+    background: linear-gradient(90deg, rgba(59,130,246,0.1) 0%, rgba(139,92,246,0.1) 100%);
+    border-bottom: 1px solid var(--border-color);
+    padding: 8px 32px;
+    display: flex;
+    gap: 24px;
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+  .coverage-strip strong { color: var(--text-primary); }
+
+  .content {
+    padding: 32px;
+    max-width: 1200px;
+    width: 100%;
+    margin: 0 auto;
+    animation: fadeIn 0.4s ease;
+  }
+  
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── Typography & Cards ── */
+  h2 { font-size: 24px; font-weight: 700; margin-bottom: 24px; letter-spacing: -0.5px; }
+  h3 { font-size: 16px; font-weight: 600; margin: 24px 0 16px; }
+
+  .card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 20px;
+    backdrop-filter: blur(12px);
+    box-shadow: var(--shadow-lg);
+  }
+
+  .grid-cols-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 24px; }
+  .grid-cols-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 24px; }
+  
+  .stat-card {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 16px;
+    display: flex; flex-direction: column; gap: 8px;
+    transition: transform 0.2s;
+  }
+  .stat-card:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.2); }
+  .stat-card .label { font-size: 12px; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.05em; }
+  .stat-card .value { font-size: 28px; font-weight: 700; color: #fff; }
+
+  /* ── Tables ── */
+  table {
+    width: 100%; border-collapse: collapse;
+    background: var(--bg-tertiary);
+    border-radius: 10px; overflow: hidden;
+  }
+  th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--border-color); }
+  th { font-size: 12px; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; background: rgba(0,0,0,0.2); }
+  td { font-size: 13px; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.03); }
+
+  /* ── Misc ── */
+  .badge {
+    padding: 4px 8px; border-radius: 12px; font-size: 11px; font-weight: 600;
+  }
+  .badge.success { background: rgba(16,185,129,0.15); color: #34d399; }
+  .badge.danger { background: rgba(239,68,68,0.15); color: #f87171; }
+  .badge.warning { background: rgba(245,158,11,0.15); color: #fbbf24; }
+
+  .flash {
+    background: rgba(239,68,68,.1);
+    border: 1px solid rgba(239,68,68,.2);
+    color: #fca5a5;
+    padding: 12px 16px; border-radius: 8px;
+    margin-bottom: 20px; font-size: 13px;
+  }
+
+  /* ── Forms ── */
+  input[type=text], input[type=password], select, textarea {
+    background: rgba(0,0,0,0.3); color: #fff;
+    border: 1px solid var(--border-color); border-radius: 6px;
+    padding: 8px 12px; font-family: var(--font-sans); outline: none;
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--primary-color); }
+  
+  button.primary-btn {
+    background: var(--primary-gradient); border: none; color: #fff;
+    padding: 8px 16px; border-radius: 6px; font-weight: 600; cursor: pointer;
+  }
+  button.primary-btn:hover { box-shadow: 0 4px 12px rgba(59,130,246,0.3); }
+
+</style>
+</head>
+<body>
+
+{% if session.user %}
+<nav class="sidebar">
+  <div class="sidebar-header">
+    <h1>Apexion / Vigil</h1>
+  </div>
+  
+  <div class="sidebar-nav">
+    <div>
+      <div class="nav-group-title">Command Center</div>
+      <a href="{{ url_for('overview_dashboard') }}" class="{{ 'active' if active=='overview' }}">Overview</a>
+    </div>
+
+    <div>
+      <div class="nav-group-title">Detection &amp; Enforcement</div>
+      <a href="{{ url_for('apexion_dashboard') }}" class="{{ 'active' if active=='apexion' }}">Apexion (DLP)</a>
+      <a href="{{ url_for('vigil_dashboard') }}" class="{{ 'active' if active=='vigil' }}">Vigil (Injections)</a>
+    </div>
+
+    <div>
+      <div class="nav-group-title">System</div>
+      <a href="{{ url_for('teach.teach_page') }}" class="{{ 'active' if active=='teach' }}">Teach Astral (Custom Types)</a>
+      <a href="{{ url_for('settings') }}" class="{{ 'active' if active=='settings' }}">Settings</a>
+    </div>
+  </div>
+
+  <div class="sidebar-footer">
+    <div class="status-dot"></div>
+    <span>LIVE · 3 Agent · 2 GW · 1 Vigil</span>
+  </div>
+</nav>
+{% endif %}
+
+<div class="main-wrapper" {% if not session.user %}style="margin-left:0;"{% endif %}>
+  {% if session.user %}
+  <header class="topbar">
+    <div class="topbar-controls">
+      <select class="topbar-btn" style="appearance:none; padding-right:24px;">
+        <option>Tenant: ACME Corp</option>
+        <option>Tenant: Globex</option>
+      </select>
+      <select class="topbar-btn" style="appearance:none; padding-right:24px;">
+        <option>Last 24 Hours</option>
+        <option>Last 7 Days</option>
+      </select>
+      <button class="topbar-btn">LIVE Mode</button>
+    </div>
+    <div class="topbar-controls">
+      <button class="topbar-btn">Disable MCP</button>
+      <button class="topbar-btn btn-danger">Lockdown</button>
+      <a href="{{ url_for('logout') }}" class="topbar-btn" style="text-decoration:none;">Logout</a>
+    </div>
+  </header>
+  
+  <div class="coverage-strip">
+    <span>Inline Coverage: <strong>98.5%</strong></span>
+    <span>Shadow AI: <strong>3 Apps</strong></span>
+    <span>Active NHI: <strong>147</strong></span>
+    <span>Connector Lag: <strong>12ms</strong></span>
+    <span>EU AI Act: <strong>45% Gap</strong></span>
+  </div>
+  {% endif %}
+
+  <main class="content">
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        {% for m in messages %}<div class="flash">{{ m }}</div>{% endfor %}
+      {% endif %}
+    {% endwith %}
+    
+    {% block content %}{% endblock %}
+  </main>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+{% block title %}Apexion / Vigil - Overview{% endblock %}
+{% block content %}
+<style>
+.risk-dial-container {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+}
+.risk-dial {
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: conic-gradient(var(--danger-color) 70%, var(--bg-tertiary) 0);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: inset 0 0 20px rgba(0,0,0,0.5), 0 0 15px rgba(239, 68, 68, 0.4);
+}
+.risk-dial-inner {
+    width: 90px;
+    height: 90px;
+    border-radius: 50%;
+    background: var(--bg-secondary);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+}
+.risk-score { font-size: 32px; font-weight: 800; color: #fff; line-height: 1; }
+.risk-label { font-size: 10px; color: var(--danger-color); text-transform: uppercase; font-weight: 700; letter-spacing: 1px; }
+
+.narrative {
+    font-size: 16px;
+    color: var(--text-secondary);
+    max-width: 600px;
+    line-height: 1.6;
+}
+.narrative strong { color: var(--danger-color); }
+
+.replay-strip {
+    background: rgba(239, 68, 68, 0.05);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    border-radius: 8px;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 24px;
+    overflow: hidden;
+    position: relative;
+}
+.replay-strip::before {
+    content: "LIVE REPLAY";
+    background: var(--danger-color);
+    color: #fff;
+    font-size: 9px; font-weight: 800;
+    padding: 2px 6px; border-radius: 4px;
+}
+.replay-text {
+    font-family: monospace;
+    color: #fca5a5;
+    white-space: nowrap;
+    animation: scrollText 10s linear infinite;
+}
+
+@keyframes scrollText {
+    0% { transform: translateX(100%); }
+    100% { transform: translateX(-100%); }
+}
+</style>
+
+<h2>Dashboard Overview</h2>
+
+<div class="replay-strip">
+    <div class="replay-text">
+        {{ stats.replay_text }}
+    </div>
+</div>
+
+<div class="grid-cols-3">
+    <div class="stat-card">
+        <span class="label">Total Invocations</span>
+        <span class="value">{{ stats.total_invocations }}</span>
+    </div>
+    <div class="stat-card">
+        <span class="label">Data Redactions</span>
+        <span class="value" style="color: var(--warning-color)">{{ stats.data_redactions }}</span>
+    </div>
+    <div class="stat-card">
+        <span class="label">Threats Blocked</span>
+        <span class="value" style="color: var(--danger-color)">{{ stats.threats_blocked }}</span>
+    </div>
+</div>
+
+<h3>Enforcement Actions Summary</h3>
+<table>
+    <thead>
+        <tr>
+            <th>Module</th>
+            <th>Allowed</th>
+            <th>Redacted</th>
+            <th>Blocked</th>
+        </tr>
+    </thead>
+    <tbody>
+        <tr>
+            <td>Apexion DLP</td>
+            <td>{{ stats.apexion.allowed }}</td>
+            <td>{{ stats.apexion.redacted }}</td>
+            <td>{{ stats.apexion.blocked }}</td>
+        </tr>
+        <tr>
+            <td>Vigil Injections</td>
+            <td>{{ stats.vigil.allowed }}</td>
+            <td>--</td>
+            <td>{{ stats.vigil.blocked }}</td>
+        </tr>
+    </tbody>
+</table>
+
+{% endblock %}
